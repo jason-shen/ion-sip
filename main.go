@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cloudwebrtc/go-sip-ua/examples/mock"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
@@ -30,7 +31,7 @@ var (
 
 func createUdp() *rtp.RtpUDPStream {
 
-	udp = rtp.NewRtpUDPStream("10.157.226.109", rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
+	udp = rtp.NewRtpUDPStream("127.0.0.1", rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
 		logger.Infof("Rtp recevied: %v, laddr %s : raddr %s", len(data), udp.LocalAddr().String(), raddr)
 		dest, _ := net.ResolveUDPAddr(raddr.Network(), raddr.String())
 		logger.Infof("Echo rtp to %v", raddr)
@@ -122,26 +123,30 @@ func main() {
 		logger.Infof("InviteStateHandler: state => %v, type => %s", state, sess.Direction())
 		switch state {
 		case session.InviteReceived:
-			//udp = createUdp()
-			//udpLaddr := udp.LocalAddr()
-			//sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
-			//logger.Infof("old sdp", sdpold)
+			logger.Infof("invited!!!")
+			udp = createUdp()
+			udpLaddr := udp.LocalAddr()
+			sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
+			logger.Infof("old sdp", sdpold)
 			//logger.Infof("remote sdp", sess.RemoteSdp())
-			sdp := CompleteTheOfferSDP(sess.RemoteSdp())
-			// sdp += "a=mid:0\r\n"
+			sdp := rewriteSDP(sess.RemoteSdp())
+			sdp += "a=mid:0\r\n"
 			logger.Infof("sdp=>>>", sdp)
 			sess.ProvideAnswer(sdp)
 			sess.Accept(200)
 			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
 				panic(err)
 			}
-			fmt.Println("answering")
+			fmt.Println("answering", sess.Request().Body())
 			break
-
+		case session.InviteSent:
+			logger.Infof("answered", resp)
+			break
 		case session.Canceled:
 			fallthrough
 		case session.Failure:
-			fallthrough
+			logger.Errorf("failed!!", sess.Response().Body())
+			break
 		case session.Terminated:
 			udp.Close()
 		}
@@ -173,11 +178,11 @@ func main() {
 	 go ua.SendRegister(profile, recipient, profile.Expires)
 	time.Sleep(time.Second * 3)
 
-	// udp = createUdp()
-	// udpLaddr := udp.LocalAddr()
-	//sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
+	 udp = createUdp()
+	udpLaddr := udp.LocalAddr()
+	sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
 	//
-	sdp := rewriteSDP(offer.SDP)
+	//sdp := offer.SDP
 	logger.Infof("offer SDP => ", sdp)
 	called, err2 := parser.ParseUri("sip:200@10.157.226.130")
 	if err2 != nil {
