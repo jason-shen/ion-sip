@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/cloudwebrtc/go-sip-ua/examples/mock"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
@@ -124,10 +123,10 @@ func main() {
 		switch state {
 		case session.InviteReceived:
 			logger.Infof("invited!!!")
-			udp = createUdp()
-			udpLaddr := udp.LocalAddr()
-			sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
-			logger.Infof("old sdp", sdpold)
+			//udp = createUdp()
+			//udpLaddr := udp.LocalAddr()
+			//sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
+			//logger.Infof("old sdp", sdpold)
 			//logger.Infof("remote sdp", sess.RemoteSdp())
 			sdp := rewriteSDP(sess.RemoteSdp())
 			sdp += "a=mid:0\r\n"
@@ -179,11 +178,11 @@ func main() {
 	time.Sleep(time.Second * 3)
 
 	 udp = createUdp()
-	udpLaddr := udp.LocalAddr()
-	sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
-	//
-	//sdp := offer.SDP
-	logger.Infof("offer SDP => ", sdp)
+	// udpLaddr := udp.LocalAddr()
+	//sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
+	////
+	sdp := offer.SDP
+	//logger.Infof("offer SDP => ", sdp)
 	called, err2 := parser.ParseUri("sip:200@10.157.226.130")
 	if err2 != nil {
 		logger.Error(err)
