@@ -24,13 +24,17 @@ import (
 )
 
 var (
-	logger 	log.Logger
-	udp		*rtp.RtpUDPStream
+	logger     log.Logger
+	udp        *rtp.RtpUDPStream
+	myIPAddr   = "192.168.1.11"
+	IPBXAddr   = "192.168.1.10"
+	myAccount  = "100"
+	myPassword = "secret"
+	myCorres   = "101"
 )
 
 func createUdp() *rtp.RtpUDPStream {
-
-	udp = rtp.NewRtpUDPStream("127.0.0.1", rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
+	udp = rtp.NewRtpUDPStream(myIPAddr, rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
 		logger.Infof("Rtp recevied: %v, laddr %s : raddr %s", len(data), udp.LocalAddr().String(), raddr)
 		dest, _ := net.ResolveUDPAddr(raddr.Network(), raddr.String())
 		logger.Infof("Echo rtp to %v", raddr)
@@ -67,7 +71,7 @@ func main() {
 	if err := stack.ListenTLS("wss", "0.0.0.0:5091", tlsOptions); err != nil {
 		logger.Panic(err)
 	}
-// start
+	// start
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		panic(err)
@@ -111,8 +115,13 @@ func main() {
 	if err := pc.SetLocalDescription(offer); err != nil {
 		panic(err)
 	}
+	gatherCompleat := webrtc.GatheringCompletePromise(pc)
+	select {
+	case <-gatherCompleat:
+		localDesc := pc.LocalDescription()
+		offer = *localDesc
+	}
 
-	//end
 	ua := ua.NewUserAgent(&ua.UserAgentConfig{
 		UserAgent: "Go Sip Client/1.0.0",
 		SipStack:  stack,
@@ -122,30 +131,26 @@ func main() {
 		logger.Infof("InviteStateHandler: state => %v, type => %s", state, sess.Direction())
 		switch state {
 		case session.InviteReceived:
-			logger.Infof("invited!!!")
 			//udp = createUdp()
 			//udpLaddr := udp.LocalAddr()
 			//sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
 			//logger.Infof("old sdp", sdpold)
 			//logger.Infof("remote sdp", sess.RemoteSdp())
-			sdp := rewriteSDP(sess.RemoteSdp())
-			sdp += "a=mid:0\r\n"
+			sdp := CompleteTheAnswerSDP(sess.RemoteSdp())
+			// sdp += "a=mid:0\r\n"
 			logger.Infof("sdp=>>>", sdp)
 			sess.ProvideAnswer(sdp)
 			sess.Accept(200)
 			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
 				panic(err)
 			}
-			fmt.Println("answering", sess.Request().Body())
+			fmt.Println("answering")
 			break
-		case session.InviteSent:
-			logger.Infof("answered", resp)
-			break
+
 		case session.Canceled:
 			fallthrough
 		case session.Failure:
-			logger.Errorf("failed!!", sess.Response().Body())
-			break
+			fallthrough
 		case session.Terminated:
 			udp.Close()
 		}
@@ -155,35 +160,38 @@ func main() {
 		logger.Infof("RegisterStateHandler: user => %s, state => %v, expires => %v", state.Account.AuthInfo.AuthUser, state.StatusCode, state.Expiration)
 	}
 
-	uri, err := parser.ParseUri("sip:100@10.157.226.130")
+	uri, err := parser.ParseUri("sip:" + myAccount + "@" + IPBXAddr + ";transport=udp")
 	if err != nil {
 		logger.Error(err)
 	}
 
 	profile := account.NewProfile(uri.Clone(), "goSIP",
 		&account.AuthInfo{
-			AuthUser: "100",
-			Password: "100",
-			Realm:    "",
+			AuthUser: myAccount,
+			Password: myPassword,
+			Realm:    IPBXAddr,
 		},
 		1800,
 	)
 
-	recipient, err := parser.ParseSipUri("sip:200@10.157.226.130;transport=udp")
+	recipient, err := parser.ParseSipUri("sip:" + myCorres + "@" + IPBXAddr + ";transport=udp")
 	if err != nil {
 		logger.Error(err)
 	}
 
-	 go ua.SendRegister(profile, recipient, profile.Expires)
+	go ua.SendRegister(profile, recipient, profile.Expires)
+	logger.Infof("### REGISTER ###")
 	time.Sleep(time.Second * 3)
 
-	 udp = createUdp()
+	udp = createUdp()
 	// udpLaddr := udp.LocalAddr()
 	//sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
-	////
-	sdp := offer.SDP
-	//logger.Infof("offer SDP => ", sdp)
-	called, err2 := parser.ParseUri("sip:200@10.157.226.130")
+	//
+	sdp := rewriteSDP(offer.SDP)
+	logger.Infof("### rewriteSDP ###")
+
+	logger.Infof("offer SDP => ", sdp)
+	called, err2 := parser.ParseUri("sip:" + myCorres + "@" + IPBXAddr)
 	if err2 != nil {
 		logger.Error(err)
 	}
@@ -222,7 +230,7 @@ func rewriteSDP(in string) string {
 	return string(out)
 }
 
-func CompleteTheOfferSDP(sdp string) string {
+func CompleteTheAnswerSDP(sdp string) string {
 	//ADD : a=sendrecv and a=mid if missing and a=ice-lite
 	sdpSplited := strings.Split(sdp, "\r\n")
 	for i := 0; i < len(sdpSplited); i++ {
