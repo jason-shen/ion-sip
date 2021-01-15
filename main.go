@@ -30,7 +30,7 @@ var (
 
 func createUdp() *rtp.RtpUDPStream {
 
-	udp = rtp.NewRtpUDPStream("127.0.0.1", rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
+	udp = rtp.NewRtpUDPStream("192.168.1.74", rtp.DefaultPortMin, rtp.DefaultPortMax, func(data []byte, raddr net.Addr) {
 		logger.Infof("Rtp recevied: %v, laddr %s : raddr %s", len(data), udp.LocalAddr().String(), raddr)
 		dest, _ := net.ResolveUDPAddr(raddr.Network(), raddr.String())
 		logger.Infof("Echo rtp to %v", raddr)
@@ -111,8 +111,13 @@ func main() {
 	if err := pc.SetLocalDescription(offer); err != nil {
 		panic(err)
 	}
-
-	//end
+	gatherCompleat := webrtc.GatheringCompletePromise(pc)
+	select {
+	case <-gatherCompleat:
+		localDesc := pc.LocalDescription()
+		offer = *localDesc
+	}
+	
 	ua := ua.NewUserAgent(&ua.UserAgentConfig{
 		UserAgent: "Go Sip Client/1.0.0",
 		SipStack:  stack,
@@ -122,30 +127,26 @@ func main() {
 		logger.Infof("InviteStateHandler: state => %v, type => %s", state, sess.Direction())
 		switch state {
 		case session.InviteReceived:
-			logger.Infof("invited!!!")
 			//udp = createUdp()
 			//udpLaddr := udp.LocalAddr()
 			//sdpold := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
 			//logger.Infof("old sdp", sdpold)
 			//logger.Infof("remote sdp", sess.RemoteSdp())
-			sdp := rewriteSDP(sess.RemoteSdp())
-			sdp += "a=mid:0\r\n"
+			sdp := CompleteTheOfferSDP(sess.RemoteSdp())
+			// sdp += "a=mid:0\r\n"
 			logger.Infof("sdp=>>>", sdp)
 			sess.ProvideAnswer(sdp)
 			sess.Accept(200)
 			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
 				panic(err)
 			}
-			fmt.Println("answering", sess.Request().Body())
+			fmt.Println("answering")
 			break
-		case session.InviteSent:
-			logger.Infof("answered", resp)
-			break
+
 		case session.Canceled:
 			fallthrough
 		case session.Failure:
-			logger.Errorf("failed!!", sess.Response().Body())
-			break
+			fallthrough
 		case session.Terminated:
 			udp.Close()
 		}
@@ -155,7 +156,7 @@ func main() {
 		logger.Infof("RegisterStateHandler: user => %s, state => %v, expires => %v", state.Account.AuthInfo.AuthUser, state.StatusCode, state.Expiration)
 	}
 
-	uri, err := parser.ParseUri("sip:100@10.157.226.130")
+	uri, err := parser.ParseUri("sip:100@192.168.1.10;transport=udp")
 	if err != nil {
 		logger.Error(err)
 	}
@@ -163,27 +164,30 @@ func main() {
 	profile := account.NewProfile(uri.Clone(), "goSIP",
 		&account.AuthInfo{
 			AuthUser: "100",
-			Password: "100",
-			Realm:    "",
+			Password: "secret",
+			Realm:    "192.168.1.10",
 		},
 		1800,
 	)
 
-	recipient, err := parser.ParseSipUri("sip:200@10.157.226.130;transport=udp")
+	recipient, err := parser.ParseSipUri("sip:101@192.168.1.10;transport=udp")
 	if err != nil {
 		logger.Error(err)
 	}
 
 	 go ua.SendRegister(profile, recipient, profile.Expires)
+	logger.Infof("### REGISTER ###")
 	time.Sleep(time.Second * 3)
 
 	 udp = createUdp()
 	// udpLaddr := udp.LocalAddr()
 	//sdp := mock.BuildLocalSdp(udpLaddr.IP.String(), udpLaddr.Port)
-	////
+	//
 	sdp := offer.SDP
-	//logger.Infof("offer SDP => ", sdp)
-	called, err2 := parser.ParseUri("sip:200@10.157.226.130")
+	logger.Infof("### rewriteSDP ###")
+
+	logger.Infof("offer SDP => ", sdp)
+	called, err2 := parser.ParseUri("sip:101@192.168.1.10")
 	if err2 != nil {
 		logger.Error(err)
 	}
